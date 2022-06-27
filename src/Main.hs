@@ -2,6 +2,9 @@
 -- https://andrew.gibiansky.com/blog/haskell/haskell-gloss/
 --   Nota: pulei a parte de colisões
 
+-- Colisão de círculos:
+--   https://gamedevelopment.tutsplus.com/tutorials/when-worlds-collide-simulating-circle-circle-collisions--gamedev-769
+
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
@@ -42,7 +45,6 @@ truncate' :: Float -> Int -> Float
 truncate' x n = (fromIntegral (floor (x * t))) / t
   where t = 10 ^ n
 
-
 -- TODO Random positions basend on windowSize (some configs doesnt work properly)
 pseudoRandomNumber :: Float -> Float
 pseudoRandomNumber seed = (take 1 . randomRs ((-19), 19) . mkStdGen $ round seed) !! 0
@@ -72,10 +74,33 @@ data SnakellGame = Game
   , appleLoc :: Coordinate -- Apple's (x, y) location
   } deriving Show
 
+wallCollision :: Coordinate -> Float -> [Char] 
+wallCollision (x, y) radius
+  | y - radius <= -fromIntegral width / 2  = "top" 
+  | y + radius >=  fromIntegral width / 2  = "bottom"
+  | x - radius <= -fromIntegral height / 2 = "left"
+  | x + radius >=  fromIntegral height / 2 = "right"
+  | otherwise = "none"
+
+appleCollision (a1, a2) (s1, s2) radius = distance < 2 * radius
+  where
+    a = a1 - s1;
+    b = a2 - s2;
+    distance = sqrt(((a1 - s1) * (a1 - s1)) + ((a2 - s2) * (a2 - s2)));
+
+newPosIfCollision :: String -> Coordinate -> Coordinate
+newPosIfCollision colisionType (x, y)
+  | colisionType == "top" || colisionType == "bottom" = (x, (-y))
+  | colisionType == "left" || colisionType == "right" = ((-x), y)
+  | otherwise = (x, y)
+
+initialHeadLoc :: Coordinate
 initialHeadLoc = (blockSize * 5, 0)
 
+initialSnakeDirection :: SnakeDirection
 initialSnakeDirection = (0, -1) 
 
+initialSnakeTail :: [SnakeBlock]
 initialSnakeTail = firstIncrement ++ secondIncrement ++ thirdIncrement
   where
     firstIncrement = snakeIncrement (initialHeadLoc, initialSnakeDirection)
@@ -90,15 +115,15 @@ initialState = Game
   , appleLoc = (-(blockSize * 3), (blockSize * 3))
   }
 
-render :: SnakellGame -> Picture
-render game =
-  pictures [walls, apple, snakeTail, snakeHead]
+render :: SnakellGame -> [Picture] -> Picture
+render game imgs =
+  pictures [apple, snakeTail, snakeHead, walls]
 
   where
     -- Snake
     snakeHead = uncurry translate headPosition $ color (dark (dark green)) $ circleSolid (blockSize / 2)
 
-    snakeTail = pictures [uncurry translate (fst tailBlockPosition) $ color snakeColor $ circleSolid (blockSize / 2) | tailBlockPosition <- tailPositions ]
+    snakeTail = pictures [uncurry translate (fst tailBlockPosition) $ head imgs | tailBlockPosition <- tailPositions]
 
     apple = uncurry translate (appleLoc game) $ color red $ rectangleSolid blockSize blockSize
 
@@ -129,9 +154,9 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = game { snakeHeadLoc = (x', y'), snakeTailLoc = newTailPositions (snakeTailLoc game), appleLoc = newAppleLoc }
+moveSnake seconds game = game { snakeHeadLoc = (x'', y''), snakeTailLoc = newTailPositions (snakeTailLoc game), appleLoc = newAppleLoc }
   where
-    -- Localização e velocidade antiga
+    -- Localização e direção antiga
     (x, y) = snakeHeadLoc game
     (vx, vy) = snakeDirection game
 
@@ -140,6 +165,9 @@ moveSnake seconds game = game { snakeHeadLoc = (x', y'), snakeTailLoc = newTailP
     y' = y + vy * snakeTailSpacing
     -- x' = x + vx * seconds
     -- y' = y + vy * seconds
+
+    collision = wallCollision (x', y') (blockSize / 2)
+    (x'', y'') = newPosIfCollision collision (x', y')
 
     teste :: SnakeBlock -> [SnakeBlock] -> [SnakeBlock]
     teste _ [] = []
@@ -156,7 +184,7 @@ moveSnake seconds game = game { snakeHeadLoc = (x', y'), snakeTailLoc = newTailP
     genRandomAppleLoc x y = pseudoRandomCoordinate (x + 11) (y + 88)
 
     snakeEatsApple :: Bool
-    snakeEatsApple = snakeHeadLoc game == appleLoc game
+    snakeEatsApple = appleCollision (appleLoc game) (x', y') (blockSize / 2)
 
 -- Respond to key events.
 handleKeys :: Event -> SnakellGame -> SnakellGame
@@ -185,10 +213,14 @@ handleKeys _ game = game
 fps :: Int
 fps = (gameVelocityConfig "normal") * 300 `div` (toInt snakeTailSpacing)
 
-main :: IO ()
-main = play window background fps initialState render handleKeys update
-
 -- Update the game by moving the ball.
 -- Ignore the ViewPort argument.
 update :: Float -> SnakellGame -> SnakellGame
 update seconds game = moveSnake seconds game
+
+main :: IO ()
+main = do
+  snakeBlockPicture <- loadBMP "src/snakeBlock.bmp"
+
+  play window background fps initialState (`render` [snakeBlockPicture]) handleKeys update
+
