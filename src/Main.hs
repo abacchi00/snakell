@@ -8,19 +8,51 @@ import Graphics.Gloss.Interface.Pure.Game
 import Data.Fixed
 import System.Random
 
+toInt :: Float -> Int
+toInt x = round x
+
+blockSize, windowSize, snakeTailSpacing :: Float
+blockSize = blockSizeConfig "normal" -- "normal" (default), "small" or "smaller"
+windowSize = blockSize * 40.0
+snakeTailSpacing = tailSpacingConfig "none" -- "none" (default), "some" or "separate"
+
+blockSizeConfig :: [Char] -> Float
+blockSizeConfig s
+  | s == "normal" = 20.0 
+  | s == "small" = 15.0
+  | s == "smaller" = 10.0
+  | otherwise = 20.0
+
+
+tailSpacingConfig :: [Char] -> Float
+tailSpacingConfig s
+  | s == "none" = 5.0 * (blockSize / 20) 
+  | s == "some" = 10.0 * (blockSize / 20)
+  | s == "separate" = 20.0 * (blockSize / 20)
+  | otherwise = 5.0
+
+gameVelocityConfig :: [Char] -> Int
+gameVelocityConfig v
+  | v == "normal"   = 1
+  | v == "hard"     = 2
+  | v == "hell"     = 3
+  | otherwise       = 1
+
 truncate' :: Float -> Int -> Float
 truncate' x n = (fromIntegral (floor (x * t))) / t
   where t = 10 ^ n
 
+
+-- TODO Random positions basend on windowSize (some configs doesnt work properly)
 pseudoRandomNumber :: Float -> Float
-pseudoRandomNumber seed = (take 1 . randomRs ((-9), 9) . mkStdGen $ round seed) !! 0
+pseudoRandomNumber seed = (take 1 . randomRs ((-19), 19) . mkStdGen $ round seed) !! 0
 
 pseudoRandomCoordinate :: Float -> Float -> (Float, Float)
 pseudoRandomCoordinate x y = (((pseudoRandomNumber x) `truncate'` 0) * 20, ((pseudoRandomNumber y) `truncate'` 0) * 20)
 
 width, height, offset :: Int
-width = 400
-height = 400
+width = toInt windowSize
+height = toInt windowSize
 offset = 100
 
 window :: Display
@@ -29,79 +61,104 @@ window = InWindow "Snakell" (width, height) (offset, offset)
 background :: Color
 background = black
 
+type Coordinate = (Float, Float)
+type SnakeDirection = Coordinate  -- Snake's directon can have four values: (0, -1) = down | (0, 1) = up | (-1, 0) = left | (1, 0) = right
+type SnakeBlock = (Coordinate, SnakeDirection) -- Snake's block (x, y) coordinate and (a, b) direction
+
 data SnakellGame = Game
-  { snakeHeadLoc :: (Float, Float) -- Snake's head (x, y) location
-  , snakeTailLoc :: [(Float, Float)] -- Snake's tail blocks (x, y) location
-  , snakeVel :: (Float, Float) -- Pixels por frame, como os blocos do jogo são 20 x 20, a cobra anda de 20 em 20 pixels
-  , appleLoc :: (Float, Float) -- Apple's (x, y) location
+  { snakeHeadLoc :: Coordinate -- Snake's head (x, y) location
+  , snakeTailLoc :: [SnakeBlock] -- Snake's tail blocks (x, y) location
+  , snakeDirection :: SnakeDirection -- Snake's directon: (0, -1) = down | (0, 1) = up | (-1, 0) = left | (1, 0) = right, 
+  , appleLoc :: Coordinate -- Apple's (x, y) location
   } deriving Show
+
+initialHeadLoc = (blockSize * 5, 0)
+
+initialSnakeDirection = (0, -1) 
+
+initialSnakeTail = firstIncrement ++ secondIncrement ++ thirdIncrement
+  where
+    firstIncrement = snakeIncrement (initialHeadLoc, initialSnakeDirection)
+    secondIncrement = snakeIncrement (last firstIncrement)
+    thirdIncrement = snakeIncrement (last secondIncrement)
 
 initialState :: SnakellGame
 initialState = Game
-  { snakeHeadLoc = (100, 0)
-  , snakeTailLoc = [(100, 20), (100, 40), (100, 60)]
-  , snakeVel = (0, -20) -- (0, -20) é pra baixo, (0, 20) é pra cima, (-20, 0) é pra esquerda, (20, 0) é pra direita, 
-  , appleLoc = (-60, 60)
+  { snakeHeadLoc = initialHeadLoc
+  , snakeTailLoc = initialSnakeTail
+  , snakeDirection = initialSnakeDirection
+  , appleLoc = (-(blockSize * 3), (blockSize * 3))
   }
 
 render :: SnakellGame -> Picture
 render game =
-  pictures [walls, apple, snakeHead, snakeTail]
+  pictures [walls, apple, snakeTail, snakeHead]
 
   where
     -- Snake
-    snakeHead = uncurry translate headPosition $ color (dark (dark green)) $ rectangleSolid 20 20
+    snakeHead = uncurry translate headPosition $ color (dark (dark green)) $ circleSolid (blockSize / 2)
 
-    snakeTail = pictures [uncurry translate tailBlockPosition $ color snakeColor $ circleSolid 10 | tailBlockPosition <- tailPositions ]
+    snakeTail = pictures [uncurry translate (fst tailBlockPosition) $ color snakeColor $ circleSolid (blockSize / 2) | tailBlockPosition <- tailPositions ]
 
-    apple = uncurry translate (appleLoc game) $ color red $ rectangleSolid 20 20
+    apple = uncurry translate (appleLoc game) $ color red $ rectangleSolid blockSize blockSize
 
     headPosition = snakeHeadLoc game
     tailPositions = snakeTailLoc game
-    
 
     -- Walls
     horizontalWall, verticalWall :: Float -> Picture
     horizontalWall offset =
       translate 0 offset $
         color wallColor $
-          rectangleSolid 400 20
+          rectangleSolid windowSize blockSize
 
     verticalWall offset =
       translate offset 0 $
         color wallColor $
-          rectangleSolid 20 400
+          rectangleSolid blockSize windowSize
 
-    walls = pictures [horizontalWall 200, horizontalWall (-200), verticalWall 200, verticalWall (-200)]
+    walls = pictures [horizontalWall (windowSize / 2), horizontalWall (-(windowSize / 2)), verticalWall (windowSize / 2), verticalWall (-(windowSize / 2))]
 
     -- Colors
     snakeColor = green
     wallColor = greyN 0.5
+
+snakeIncrement :: SnakeBlock -> [SnakeBlock]
+snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
+  where
+    snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
 moveSnake seconds game = game { snakeHeadLoc = (x', y'), snakeTailLoc = newTailPositions (snakeTailLoc game), appleLoc = newAppleLoc }
   where
     -- Localização e velocidade antiga
     (x, y) = snakeHeadLoc game
-    (vx, vy) = snakeVel game
+    (vx, vy) = snakeDirection game
 
     -- Novas localizações
-    x' = x + vx
-    y' = y + vy
+    x' = x + vx * snakeTailSpacing
+    y' = y + vy * snakeTailSpacing
     -- x' = x + vx * seconds
     -- y' = y + vy * seconds
 
+    teste :: SnakeBlock -> [SnakeBlock] -> [SnakeBlock]
     teste _ [] = []
-    teste _ [a] = if (snakeEatsApple) then [a] else []
+    teste _ [a] = if (snakeEatsApple) then snakeIncrement a else []
     teste a (_:xs) = [a] ++ teste (head xs) xs
-    newTailPositions xs = [(x, y)] ++ teste (head xs) xs
 
-    newAppleLoc :: (Float, Float)
-    newAppleLoc = if snakeEatsApple then pseudoRandomCoordinate (x + 79) (y + 32) else appleLoc game
+    newTailPositions :: [SnakeBlock] -> [SnakeBlock]
+    newTailPositions xs = [((x, y), snakeDirection game)] ++ teste (head xs) xs
 
+    newAppleLoc :: Coordinate
+    newAppleLoc = if snakeEatsApple then genRandomAppleLoc x y else appleLoc game
+
+    genRandomAppleLoc :: Float -> Float -> Coordinate
+    genRandomAppleLoc x y = pseudoRandomCoordinate (x + 11) (y + 88)
+
+    snakeEatsApple :: Bool
     snakeEatsApple = snakeHeadLoc game == appleLoc game
 
--- | Respond to key events.
+-- Respond to key events.
 handleKeys :: Event -> SnakellGame -> SnakellGame
 
 -- For an 'r' keypress, reset the snake's head to the center.
@@ -109,16 +166,16 @@ handleKeys (EventKey (Char 'r') _ _ _) game =
   game { snakeHeadLoc = (-180, 180) }
 
 handleKeys (EventKey (SpecialKey KeyUp) _ _ _) game =
-  game { snakeVel = (0, 20) }
+  game { snakeDirection = (0, 1) }
 
 handleKeys (EventKey (SpecialKey KeyDown) _ _ _) game =
-  game { snakeVel = (0, -20) }
+  game { snakeDirection = (0, -1) }
 
 handleKeys (EventKey (SpecialKey KeyRight) _ _ _) game =
-  game { snakeVel = (20, 0) }
+  game { snakeDirection = (1, 0) }
 
 handleKeys (EventKey (SpecialKey KeyLeft) _ _ _) game =
-  game { snakeVel = (-20, 0) }
+  game { snakeDirection = (-1, 0) }
 
 -- Do nothing for all other events.
 handleKeys _ game = game
@@ -126,13 +183,12 @@ handleKeys _ game = game
 
 -- Numero de frames para mostrar por segundo
 fps :: Int
--- fps = 60
-fps = 10
+fps = (gameVelocityConfig "normal") * 300 `div` (toInt snakeTailSpacing)
 
 main :: IO ()
 main = play window background fps initialState render handleKeys update
 
--- | Update the game by moving the ball.
+-- Update the game by moving the ball.
 -- Ignore the ViewPort argument.
 update :: Float -> SnakellGame -> SnakellGame
 update seconds game = moveSnake seconds game
