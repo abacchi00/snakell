@@ -1,9 +1,13 @@
 -- Fontes:
--- https://andrew.gibiansky.com/blog/haskell/haskell-gloss/
---   Nota: pulei a parte de colisões
+-- -> Para iniciar o projeto:
+--      https://andrew.gibiansky.com/blog/haskell/haskell-gloss/
+--        Nota: pulei a parte de colisões
 
--- Colisão de círculos:
---   https://gamedevelopment.tutsplus.com/tutorials/when-worlds-collide-simulating-circle-circle-collisions--gamedev-769
+-- -> Para carregar imagens:
+--      https://blog.jayway.com/2020/11/01/making-a-small-game-with-gloss/
+
+-- -> Colisão de círculos:
+--      https://gamedevelopment.tutsplus.com/tutorials/when-worlds-collide-simulating-circle-circle-collisions--gamedev-769
 
 import Graphics.Gloss
 import Graphics.Gloss.Data.ViewPort
@@ -33,7 +37,6 @@ blockSizeConfig s
   | s == "small" = 15.0
   | s == "smaller" = 10.0
   | otherwise = 20.0
-
 
 tailSpacingConfig :: [Char] -> Float
 tailSpacingConfig s
@@ -86,20 +89,6 @@ data SnakellGame = Game
   , playerScore :: Float
   } deriving Show
 
-wallCollision :: Coordinate -> Float -> [Char] 
-wallCollision (x, y) radius
-  | y - radius <= -fromIntegral width / 2  = "top" 
-  | y + radius >=  fromIntegral width / 2  = "bottom"
-  | x - radius <= -fromIntegral height / 2 = "left"
-  | x + radius >=  fromIntegral height / 2 = "right"
-  | otherwise = "none"
-
-appleCollision (a1, a2) (s1, s2) radius = distance < 2 * radius
-  where
-    a = a1 - s1;
-    b = a2 - s2;
-    distance = sqrt(((a1 - s1) * (a1 - s1)) + ((a2 - s2) * (a2 - s2)));
-
 newPosIfCollision :: String -> Coordinate -> Coordinate
 newPosIfCollision colisionType (x, y)
   | colisionType == "top" || colisionType == "bottom" = (x, (-y))
@@ -132,6 +121,21 @@ initialState = Game
   , playerScore = 0
   }
 
+wallCollision :: Coordinate -> Float -> [Char] 
+wallCollision (x, y) radius
+  | y - radius <= -fromIntegral width / 2  = "top" 
+  | y + radius >=  fromIntegral width / 2  = "bottom"
+  | x - radius <= -fromIntegral height / 2 = "left"
+  | x + radius >=  fromIntegral height / 2 = "right"
+  | otherwise = "none"
+
+appleCollision :: Coordinate -> Coordinate -> Float -> Bool
+appleCollision (a1, a2) (s1, s2) radius = distance < 2 * radius
+  where
+    a = a1 - s1;
+    b = a2 - s2;
+    distance = sqrt(((a1 - s1) * (a1 - s1)) + ((a2 - s2) * (a2 - s2)));
+
 render :: SnakellGame -> [Picture] -> Picture
 render game imgs =
   pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore]
@@ -139,45 +143,44 @@ render game imgs =
   where
     -- Snake
     snakeHead :: Picture
-    snakeHead = uncurry translate headPosition $ rotate headRotation (scale 0.08 0.08 snakeHeadPic)
+    snakeHead = uncurry translate headPosition $ rotate headRotation snakeHeadPic
       where
         headRotation
           | snakeDirection game == (0, -1) = 0
           | snakeDirection game == (0, 1)  = 180
           | snakeDirection game == (-1, 0) = 90
           | snakeDirection game == (1, 0)  = 270
-
-    snakeHeadPic = imgs !! 2
+        headPosition = snakeHeadLoc game
+        snakeHeadPic = scale 0.08 0.08 (imgs !! 2) 
 
     snakeTail :: Picture
     snakeTail = pictures [uncurry translate (fst tailBlock) $ snakeBlockPic | tailBlock <- snakeTailLoc game]
+      where
+        snakeBlockPic = scale 0.04 0.04 (imgs !! 3)
 
-    snakeBlockPic = scale 0.04 0.04 (imgs !! 3)
+    -- Apple
 
     apple :: Picture
-    apple = uncurry translate applePosition $ scale 2 2 applePic
+    apple = uncurry translate currentApplePosition $ applePic
       where
-        applePic = imgs !! 1
-
-    headPosition :: Coordinate
-    headPosition = snakeHeadLoc game
-    tailBlocks :: [SnakeBlock]
-    tailBlocks = snakeTailLoc game
-    applePosition :: Coordinate
-    applePosition = appleLoc game
+        applePic = scale 2 2 (imgs !! 1)
+        currentApplePosition = appleLoc game
 
     -- Text
 
+    gameScore :: Picture
     gameScore = uncurry translate (-380, -380) $ scale 0.2 0.2 $ text ("Score: " ++ (show (playerScore game)))
 
     -- Bullet
 
+    bulletPic :: Picture
     bulletPic = pictures [
       uncurry translate (fst (bullet game)) $ color black $ circleSolid (blockRadius / 1.4),
       uncurry translate (fst (bullet game)) $ color (light blue) $ circleSolid (blockRadius / 2)
       ]
 
     -- Walls
+
     wall :: Int -> Int -> Picture
     wall x y = translate offsetX offsetY $ wallColor $ shape
       where
@@ -185,19 +188,17 @@ render game imgs =
         offsetY = if x == 0 then 0 else offset
         offset  = if y == 1 then windowRadius else (-windowRadius)
         shape   = if x == 1 then rectangleSolid windowSize blockSize else rectangleSolid blockSize windowSize
-    
+        wallColor = color $ greyN 0.5
+
+    walls :: Picture
     walls = pictures [wall 1 1, wall 1 0, wall 0 0, wall 0 1]
 
     -- Grass
+
     grassPic = imgs !! 0
     gameGrass = pictures [uncurry translate (x, y) $ grassPic | x <- grassPositions, y <- grassPositions]
       where
         grassPositions = [-windowRadius, -windowRadius + 80..windowRadius]
-    
-    -- Colors
-    snakeHeadColor = color (dark (dark (dark green)))
-    snakeTailColor = color (dark green)
-    wallColor = color $ greyN 0.5
 
 snakeIncrement :: SnakeBlock -> [SnakeBlock]
 snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
@@ -205,18 +206,33 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = game { snakeHeadLoc = (x'', y''), snakeTailLoc = newTailPositions (snakeTailLoc game), appleLoc = newAppleLoc, bullet = nextBulletState, playerScore = newScore }
+moveSnake seconds game = nextGameState
   where
+    -- Next game state (after each frame)
+
+    nextGameState :: SnakellGame
+    nextGameState = Game
+      { snakeHeadLoc = (x'', y'')
+      , snakeTailLoc = newTailPositions (snakeTailLoc game)
+      , snakeDirection = snakeDirection game
+      , appleLoc = newAppleLoc
+      , bullet = nextBulletState
+      , playerScore = newScore
+      }
+
     -- Localização e direção antiga
+
     (x, y) = snakeHeadLoc game
     (vx, vy) = snakeDirection game
 
     -- Novas localizações
+
     x' = x + vx * snakeTailSpacing
     y' = y + vy * snakeTailSpacing
     -- x' = x + vx * seconds
     -- y' = y + vy * seconds
 
+    collision :: String
     collision = wallCollision (x', y') blockRadius
     (x'', y'') = newPosIfCollision collision (x', y')
 
@@ -267,7 +283,6 @@ handleKeys (EventKey (Char 'r') _ _ _) game =
 handleKeys (EventKey (Char 's') _ _ _) game =
   game { bullet = if bullet game /= restingBulletState then bullet game else (snakeHeadLoc game, snakeDirection game) }
 
-
 handleKeys (EventKey (SpecialKey KeyUp) _ _ _) game =
   game { snakeDirection = (0, 1) }
 
@@ -282,7 +297,6 @@ handleKeys (EventKey (SpecialKey KeyLeft) _ _ _) game =
 
 -- Do nothing for all other events.
 handleKeys _ game = game
-
 
 -- Numero de frames para mostrar por segundo
 fps :: Int
@@ -301,4 +315,3 @@ main = do
   snakeBlockPicture <- loadBMP "src/snakeBlock.bmp"
 
   play window background fps initialState (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture]) handleKeys update
-
