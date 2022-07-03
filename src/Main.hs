@@ -21,7 +21,10 @@ toInt x = round x
 blockSize, windowSize, snakeTailSpacing :: Float
 blockSize = blockSizeConfig "normal" -- "normal" (default), "small" or "smaller"
 windowSize = blockSize * 40.0
+infoDisplayWidth = blockSize * 20.0
+infoDisplayHeight = windowSize
 snakeTailSpacing = tailSpacingConfig "none" -- "none" (default), "some" or "separate"
+slimeGenerationRatio = 3 -- How many seconds between each slime generation
 
 -- Helpers
 
@@ -64,8 +67,9 @@ pseudoRandomCoordinate :: Float -> Float -> (Float, Float)
 pseudoRandomCoordinate x y = (pseudoRandomNumber x (-r) r, pseudoRandomNumber y (-r) r)
   where
     r = windowRadius - blockSize
+
 width, height, offset :: Int
-width = toInt windowSize
+width = toInt windowSize + toInt infoDisplayWidth
 height = toInt windowSize
 offset = 100
 
@@ -87,6 +91,9 @@ data SnakellGame = Game
   , appleLoc :: Coordinate -- Apple's (x, y) location
   , bullet :: BulletState
   , playerScore :: Float
+  , timeAlive :: Int -- seconds
+  , timePassed :: Float -- seconds float
+  , slimeLocs :: [Coordinate]
   } deriving Show
 
 newPosIfCollision :: String -> Coordinate -> Coordinate
@@ -119,26 +126,29 @@ initialState = Game
   , appleLoc = (-(blockSize * 3), (blockSize * 3))
   , bullet = restingBulletState
   , playerScore = 0
+  , timeAlive = 0
+  , timePassed = 0
+  , slimeLocs = [(100, 100), (0, 320), (-140, -140)]
   }
 
 wallCollision :: Coordinate -> Float -> [Char] 
 wallCollision (x, y) radius
-  | y - radius <= -fromIntegral width / 2  = "top" 
-  | y + radius >=  fromIntegral width / 2  = "bottom"
-  | x - radius <= -fromIntegral height / 2 = "left"
-  | x + radius >=  fromIntegral height / 2 = "right"
+  | y - radius <= -windowSize / 2 = "top" 
+  | y + radius >=  windowSize / 2 = "bottom"
+  | x - radius <= -windowSize / 2 = "left"
+  | x + radius >=  windowSize / 2 = "right"
   | otherwise = "none"
 
-appleCollision :: Coordinate -> Coordinate -> Float -> Bool
-appleCollision (a1, a2) (s1, s2) radius = distance < 2 * radius
+circleCollision :: Coordinate -> Float -> Coordinate -> Float -> Bool
+circleCollision (a1, a2) aRadius (b1, b2) bRadius = distance < aRadius + bRadius
   where
-    a = a1 - s1;
-    b = a2 - s2;
-    distance = sqrt(((a1 - s1) * (a1 - s1)) + ((a2 - s2) * (a2 - s2)));
+    x = a1 - b1;
+    y = a2 - b2;
+    distance = sqrt(x^2 + y^2);
 
 render :: SnakellGame -> [Picture] -> Picture
 render game imgs =
-  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore]
+  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, timeDisplay, slimes]
 
   where
     -- Snake
@@ -166,11 +176,29 @@ render game imgs =
         applePic = scale 2 2 (imgs !! 1)
         currentApplePosition = appleLoc game
 
-    -- Text
+    -- Slime
+
+    -- radius 25
+    slimes = pictures [slime pos | pos <- (slimeLocs game)]
+
+    slime position = uncurry translate position $ slimePic
+      where
+        slimePic = scale 0.14285 0.14285 (imgs !! 4)
+
+    -- Score
 
     gameScore :: Picture
-    gameScore = uncurry translate (-380, -380) $ scale 0.2 0.2 $ text ("Score: " ++ (show (playerScore game)))
+    gameScore = pictures [
+      uncurry translate (440, 360) $ scale 0.2 0.2 $ color white $ text "Score: ",
+      uncurry translate (440, 320) $ scale 0.2 0.2 $ color white $ text (show (playerScore game))
+      ]
+    -- Time alive
 
+    timeDisplay :: Picture
+    timeDisplay = pictures [
+      uncurry translate (440, -340) $ scale 0.15 0.15 $ color white $ text ("Time alive:"),
+      uncurry translate (440, -380) $ scale 0.15 0.15 $ color white $ text ((show (timeAlive game)) ++ " seconds")
+      ]
     -- Bullet
 
     bulletPic :: Picture
@@ -198,7 +226,7 @@ render game imgs =
     grassPic = imgs !! 0
     gameGrass = pictures [uncurry translate (x, y) $ grassPic | x <- grassPositions, y <- grassPositions]
       where
-        grassPositions = [-windowRadius, -windowRadius + 80..windowRadius]
+        grassPositions = [-windowRadius + blockSize * 2, -windowRadius + blockSize * 2 + 80..windowRadius - blockSize * 2]
 
 snakeIncrement :: SnakeBlock -> [SnakeBlock]
 snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
@@ -206,7 +234,7 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = nextGameState
+moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
   where
     -- Next game state (after each frame)
 
@@ -218,6 +246,9 @@ moveSnake seconds game = nextGameState
       , appleLoc = newAppleLoc
       , bullet = nextBulletState
       , playerScore = newScore
+      , timeAlive = newTimeAlive
+      , timePassed = newTimePassed
+      , slimeLocs = newerSlimeLocs
       }
 
     -- Localização e direção antiga
@@ -229,8 +260,6 @@ moveSnake seconds game = nextGameState
 
     x' = x + vx * snakeTailSpacing
     y' = y + vy * snakeTailSpacing
-    -- x' = x + vx * seconds
-    -- y' = y + vy * seconds
 
     collision :: String
     collision = wallCollision (x', y') blockRadius
@@ -242,6 +271,56 @@ moveSnake seconds game = nextGameState
     newScore = (playerScore) game + scoreIncrement
       where
         scoreIncrement = if snakeEatsApple then 3 else 0
+
+    -- New time alive
+
+    newTimeAlive = timeAlive game + timeAliveIncrement
+
+    timeAliveIncrement = if toInt (timePassed game) < toInt newTimePassed then 1 else 0
+    newTimePassed = timePassed game + seconds 
+
+    -- snake hits tail
+
+    snakeHitsTail = length snakeTailHits > 20
+    snakeTailHits = filter (==True) [circleCollision (snakeHeadLoc game) blockSize tailBlockLoc blockSize | (tailBlockLoc, _) <- snakeTailLoc game ]
+
+    -- Slime
+
+    newerSlimeLocs = [(x' x, y' y) | (x, y) <- newSlimeLocs]
+      where
+        (a, b) = snakeHeadLoc game
+        x' x = if x < a then x + coordOffset a x else if x == a then x else x - coordOffset a x
+        y' y = if y < b then y + coordOffset b y else if y == b then y else y - coordOffset b y
+        
+        coordOffset v1 v2
+          | averageAbs v1 v2 > 200 = 2.5
+          | averageAbs v1 v2 > 175 = 2.25
+          | averageAbs v1 v2 > 150 = 2.0
+          | averageAbs v1 v2 > 125 = 1.75
+          | averageAbs v1 v2 > 100 = 1.5
+          | averageAbs v1 v2 > 75  = 1.25
+          | averageAbs v1 v2 > 50  = 1.0
+          | otherwise  = 0.5
+
+        averageAbs v1 v2 = abs ((v1 - v2) / 2)
+
+
+
+    newSlimeLocs = if shouldGenerateNewSlime then aliveSlimeLocs ++ [genRandomSlimeLoc x y] else aliveSlimeLocs
+      where
+        shouldGenerateNewSlime = secondJustPassed && timeToGenerateSlime
+        secondJustPassed = timeAlive game /= newTimeAlive
+        timeToGenerateSlime = (timeAlive game) `mod` slimeGenerationRatio == 0
+
+    aliveSlimeLocs = filter bulletDidntHitSlime (slimeLocs game)
+
+    bulletDidntHitSlime slimeLoc = not (bulletHitSlime slimeLoc)
+
+    bulletHitSlime slimeLoc = circleCollision bulletLoc 0.01 slimeLoc 25
+      where
+        (bulletLoc, _) = bullet game
+
+    bulletHitAnySlime = any bulletHitSlime (slimeLocs game)
 
     --
 
@@ -262,10 +341,16 @@ moveSnake seconds game = nextGameState
         seedX = x + 11 + snd (fst (last (snakeTailLoc game)))
         seedY = y + 88 + fst (fst (last (snakeTailLoc game)))
 
-    snakeEatsApple :: Bool
-    snakeEatsApple = appleCollision (appleLoc game) (x', y') blockRadius
+    genRandomSlimeLoc :: Float -> Float -> Coordinate
+    genRandomSlimeLoc x y = pseudoRandomCoordinate seedX seedY
+      where
+        seedX = x + 7 + snd (fst (last (snakeTailLoc game)))
+        seedY = y + 48 + fst (fst (last (snakeTailLoc game)))
 
-    nextBulletState = if bulletWallCollision /= "none" then restingBulletState else moveBullet
+    snakeEatsApple :: Bool
+    snakeEatsApple = circleCollision (appleLoc game) blockRadius (x', y') blockRadius
+
+    nextBulletState = if bulletWallCollision /= "none" || bulletHitAnySlime then restingBulletState else moveBullet
       where
         moveBullet = ((bulletX + bulletDirX * 10, bulletY + bulletDirY * 10), (bulletDirX, bulletDirY))
         ((bulletX, bulletY), (bulletDirX, bulletDirY)) = bullet game
@@ -284,16 +369,16 @@ handleKeys (EventKey (Char 's') _ _ _) game =
   game { bullet = if bullet game /= restingBulletState then bullet game else (snakeHeadLoc game, snakeDirection game) }
 
 handleKeys (EventKey (SpecialKey KeyUp) _ _ _) game =
-  game { snakeDirection = (0, 1) }
+  game { snakeDirection = if snakeDirection game == (0, -1) then (0, -1) else (0, 1) }
 
 handleKeys (EventKey (SpecialKey KeyDown) _ _ _) game =
-  game { snakeDirection = (0, -1) }
+  game {  snakeDirection = if snakeDirection game == (0, 1) then (0, 1) else (0, -1) }
 
 handleKeys (EventKey (SpecialKey KeyRight) _ _ _) game =
-  game { snakeDirection = (1, 0) }
+  game { snakeDirection = if snakeDirection game == (-1, 0) then (-1, 0) else (1, 0) }
 
 handleKeys (EventKey (SpecialKey KeyLeft) _ _ _) game =
-  game { snakeDirection = (-1, 0) }
+  game { snakeDirection = if snakeDirection game == (1, 0) then (1, 0) else (-1, 0) }
 
 -- Do nothing for all other events.
 handleKeys _ game = game
@@ -313,5 +398,6 @@ main = do
   grassPicture <- loadBMP "src/grass.bmp"
   snakeHeadPicture <- loadBMP "src/snakeHead.bmp"
   snakeBlockPicture <- loadBMP "src/snakeBlock.bmp"
+  slimePicture <- loadBMP "src/slime.bmp"
 
-  play window background fps initialState (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture]) handleKeys update
+  play window background fps initialState (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture, slimePicture]) handleKeys update
