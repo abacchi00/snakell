@@ -14,7 +14,7 @@ import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
 import Data.Fixed
 import System.Random
-
+-- teste
 toInt :: Float -> Int
 toInt x = round x
 
