@@ -270,7 +270,7 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
     newScore :: Float
     newScore = (playerScore) game + scoreIncrement - scoreDecrement
       where
-        scoreIncrement = if snakeEatsApple then 3 else 0
+        scoreIncrement = if snakeEatsApple then 50 else 0
         scoreDecrement = if slimeHitsHead || slimeHitsTail then 1 else 0
 
     -- New time alive
