@@ -14,6 +14,7 @@ import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
 import Data.Fixed
 import System.Random
+import GHC.Float
 -- teste
 toInt :: Float -> Int
 toInt x = round x
@@ -268,10 +269,11 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
     -- New score
 
     newScore :: Float
-    newScore = (playerScore) game + scoreIncrement - scoreDecrement
+    newScore = (playerScore) game + scoreIncrement - scoreDecrement + killedSlimes
       where
         scoreIncrement = if snakeEatsApple then 50 else 0
         scoreDecrement = if slimeHitsHead || slimeHitsTail then 1 else 0
+        killedSlimes = int2Float $ (length (slimeLocs game) - length aliveSlimeLocs) * 10
 
     -- New time alive
 
@@ -322,6 +324,7 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
         (bulletLoc, _) = bullet game
 
     bulletHitAnySlime = any bulletHitSlime (slimeLocs game)
+
 
 
     slimeHitsTail = not $ null $ filter (==True) [circleCollision slimeLoc blockSize tailBlockLoc blockSize | (tailBlockLoc, _) <- snakeTailLoc game, slimeLoc <- slimeLocs game]
