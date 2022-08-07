@@ -268,9 +268,10 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
     -- New score
 
     newScore :: Float
-    newScore = (playerScore) game + scoreIncrement
+    newScore = (playerScore) game + scoreIncrement - scoreDecrement
       where
         scoreIncrement = if snakeEatsApple then 3 else 0
+        scoreDecrement = if slimeHitsTail then 1 else 0
 
     -- New time alive
 
@@ -321,6 +322,9 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
         (bulletLoc, _) = bullet game
 
     bulletHitAnySlime = any bulletHitSlime (slimeLocs game)
+
+
+    slimeHitsTail = not $ null $ filter (==True) [circleCollision slimeLoc blockSize tailBlockLoc blockSize | (tailBlockLoc, _) <- snakeTailLoc game, slimeLoc <- slimeLocs game]
 
     --
 
