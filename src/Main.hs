@@ -271,7 +271,7 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
     newScore = (playerScore) game + scoreIncrement - scoreDecrement
       where
         scoreIncrement = if snakeEatsApple then 3 else 0
-        scoreDecrement = if slimeHitsTail then 1 else 0
+        scoreDecrement = if slimeHitsHead || slimeHitsTail then 1 else 0
 
     -- New time alive
 
@@ -325,6 +325,9 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
 
 
     slimeHitsTail = not $ null $ filter (==True) [circleCollision slimeLoc blockSize tailBlockLoc blockSize | (tailBlockLoc, _) <- snakeTailLoc game, slimeLoc <- slimeLocs game]
+
+    slimeHitsHead = not $ null $ filter (==True) [circleCollision (snakeHeadLoc game) blockSize slimeLoc blockSize | slimeLoc <- slimeLocs game]
+    
 
     --
 
