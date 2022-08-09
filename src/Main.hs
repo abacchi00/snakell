@@ -235,7 +235,7 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
+moveSnake seconds game = if snakeHitsTail || newScore < 0 then initialState else nextGameState
   where
     -- Next game state (after each frame)
 
