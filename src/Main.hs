@@ -95,6 +95,8 @@ data SnakellGame = Game
   , timeAlive :: Int -- seconds
   , timePassed :: Float -- seconds float
   , slimeLocs :: [Coordinate]
+  , level :: Int
+  , applesEaten :: Int
   } deriving Show
 
 newPosIfCollision :: String -> Coordinate -> Coordinate
@@ -130,6 +132,8 @@ initialState = Game
   , timeAlive = 0
   , timePassed = 0
   , slimeLocs = [(100, 100), (0, 320), (-140, -140)]
+  , level = 0
+  , applesEaten = 0
   }
 
 wallCollision :: Coordinate -> Float -> [Char] 
@@ -149,7 +153,7 @@ circleCollision (a1, a2) aRadius (b1, b2) bRadius = distance < aRadius + bRadius
 
 render :: SnakellGame -> [Picture] -> Picture
 render game imgs =
-  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, timeDisplay, slimes]
+  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, gameLevel, timeDisplay, slimes]
 
   where
     -- Snake
@@ -193,6 +197,14 @@ render game imgs =
       uncurry translate (440, 360) $ scale 0.2 0.2 $ color white $ text "Score: ",
       uncurry translate (440, 320) $ scale 0.2 0.2 $ color white $ text (show (playerScore game))
       ]
+
+    -- Level
+    gameLevel :: Picture
+    gameLevel = pictures [
+      uncurry translate (440, 0) $ scale 0.2 0.2 $ color white $ text "Level: ",
+      uncurry translate (440, -40) $ scale 0.2 0.2 $ color white $ text (show (level game))
+      ]
+
     -- Time alive
 
     timeDisplay :: Picture
@@ -250,6 +262,8 @@ moveSnake seconds game = if snakeHitsTail || newScore < 0 then initialState else
       , timeAlive = newTimeAlive
       , timePassed = newTimePassed
       , slimeLocs = newerSlimeLocs
+      , level = newLevel
+      , applesEaten = newApplesEaten
       }
 
     -- Localização e direção antiga
@@ -365,6 +379,18 @@ moveSnake seconds game = if snakeHitsTail || newScore < 0 then initialState else
         moveBullet = ((bulletX + bulletDirX * 10, bulletY + bulletDirY * 10), (bulletDirX, bulletDirY))
         ((bulletX, bulletY), (bulletDirX, bulletDirY)) = bullet game
         bulletWallCollision = wallCollision (bulletX, bulletY) (blockRadius / 2)
+
+    fib 0 = 0
+    fib 1 = 1
+    fib n = fib (n-1) + fib (n-2)
+
+    newLevel :: Int
+    newLevel = if applesEaten game == fib (level game + 1) then (level game) + 1 else level game
+
+    newApplesEaten :: Int
+    newApplesEaten
+      | newLevel /= level game = 0
+      | otherwise = if snakeEatsApple then (applesEaten game) + 1 else applesEaten game
 
 
 -- Respond to key events.
