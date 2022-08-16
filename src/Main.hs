@@ -97,6 +97,7 @@ data SnakellGame = Game
   , slimeLocs :: [Coordinate]
   , level :: Int
   , applesEaten :: Int
+  , gameRunning :: Bool
   } deriving Show
 
 newPosIfCollision :: String -> Coordinate -> Coordinate
@@ -134,6 +135,7 @@ initialState = Game
   , slimeLocs = [(100, 100), (0, 320), (-140, -140)]
   , level = 0
   , applesEaten = 0
+  , gameRunning = False
   }
 
 wallCollision :: Coordinate -> Float -> [Char] 
@@ -247,7 +249,10 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = if snakeHitsTail || newScore < 0 then initialState else nextGameState
+moveSnake seconds game
+  | snakeHitsTail || newScore < 0 = initialState  
+  | gameRunning game = nextGameState 
+  | otherwise = initialState
   where
     -- Next game state (after each frame)
 
@@ -264,6 +269,7 @@ moveSnake seconds game = if snakeHitsTail || newScore < 0 then initialState else
       , slimeLocs = newerSlimeLocs
       , level = newLevel
       , applesEaten = newApplesEaten
+      , gameRunning = True
       }
 
     -- Localização e direção antiga
@@ -415,6 +421,9 @@ handleKeys (EventKey (SpecialKey KeyRight) _ _ _) game =
 
 handleKeys (EventKey (SpecialKey KeyLeft) _ _ _) game =
   game { snakeDirection = if snakeDirection game == (1, 0) then (1, 0) else (-1, 0) }
+
+handleKeys (EventKey (Char 'a') _ _ _) game = 
+  game { gameRunning = True }
 
 -- Do nothing for all other events.
 handleKeys _ game = game
