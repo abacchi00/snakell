@@ -315,8 +315,11 @@ moveSnake seconds game
     newScore :: Float
     newScore = (playerScore) game + scoreIncrement - scoreDecrement + killedSlimes
       where
-        scoreIncrement = if snakeEatsApple then 50 else 0
-        scoreDecrement = if slimeHitsHead || slimeHitsTail then 1 else 0
+        scoreIncrement = if snakeEatsApple then 100 else 0
+        scoreDecrement
+          | slimeHitsHead = 2
+          | slimeHitsTail = 1 
+          | otherwise = 0
         killedSlimes = int2Float $ (length (slimeLocs game) - length aliveSlimeLocs) * 10
 
     -- New High Score
