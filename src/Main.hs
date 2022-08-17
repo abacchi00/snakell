@@ -160,9 +160,19 @@ circleCollision (a1, a2) aRadius (b1, b2) bRadius = distance < aRadius + bRadius
 
 render :: SnakellGame -> [Picture] -> Picture
 render game imgs =
-  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, gameHighScore, gameLevel, timeDisplay, slimes]
+  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, gameHighScore, gameLevel, timeDisplay, slimes, blockScr]
 
   where
+
+    -- Block Screen
+    blockScr :: Picture
+    blockScr
+      | not (gameRunning game) = uncurry translate (0, 0) $ blockScrPic
+      | otherwise = uncurry translate (0, 0) $ emptyScreen
+      where
+        blockScrPic = scale 1.1 1.1 (imgs !! 5)
+        emptyScreen = scale 0 0 (imgs !! 5)
+
     -- Snake
     snakeHead :: Picture
     snakeHead = uncurry translate headPosition $ rotate headRotation snakeHeadPic
@@ -463,5 +473,6 @@ main = do
   snakeHeadPicture <- loadBMP "src/snakeHead.bmp"
   snakeBlockPicture <- loadBMP "src/snakeBlock.bmp"
   slimePicture <- loadBMP "src/slime.bmp"
+  blockScreen <- loadBMP "src/blockScreen.bmp"
 
-  play window background fps (initialState 0.0) (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture, slimePicture]) handleKeys update
+  play window background fps (initialState 0.0) (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture, slimePicture, blockScreen]) handleKeys update
