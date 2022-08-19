@@ -14,6 +14,7 @@ import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
 import Data.Fixed
 import System.Random
+import GHC.Float
 -- teste
 toInt :: Float -> Int
 toInt x = round x
@@ -94,6 +95,10 @@ data SnakellGame = Game
   , timeAlive :: Int -- seconds
   , timePassed :: Float -- seconds float
   , slimeLocs :: [Coordinate]
+  , level :: Int
+  , applesEaten :: Int
+  , gameRunning :: Bool
+  , highScore :: Float
   } deriving Show
 
 newPosIfCollision :: String -> Coordinate -> Coordinate
@@ -118,8 +123,11 @@ initialSnakeTail = firstIncrement ++ secondIncrement ++ thirdIncrement
     secondIncrement = snakeIncrement (last firstIncrement)
     thirdIncrement = snakeIncrement (last secondIncrement)
 
-initialState :: SnakellGame
-initialState = Game
+maxScoring :: Float
+maxScoring = 0
+
+initialState :: Float -> SnakellGame
+initialState hs = Game
   { snakeHeadLoc = initialHeadLoc
   , snakeTailLoc = initialSnakeTail
   , snakeDirection = initialSnakeDirection
@@ -129,6 +137,10 @@ initialState = Game
   , timeAlive = 0
   , timePassed = 0
   , slimeLocs = [(100, 100), (0, 320), (-140, -140)]
+  , level = 0
+  , applesEaten = 0
+  , gameRunning = False
+  , highScore = hs
   }
 
 wallCollision :: Coordinate -> Float -> [Char] 
@@ -148,9 +160,19 @@ circleCollision (a1, a2) aRadius (b1, b2) bRadius = distance < aRadius + bRadius
 
 render :: SnakellGame -> [Picture] -> Picture
 render game imgs =
-  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, timeDisplay, slimes]
+  pictures [gameGrass, apple, snakeTail, bulletPic, snakeHead, walls, gameScore, gameHighScore, gameLevel, timeDisplay, slimes, blockScr]
 
   where
+
+    -- Block Screen
+    blockScr :: Picture
+    blockScr
+      | not (gameRunning game) = uncurry translate (0, 0) $ blockScrPic
+      | otherwise = uncurry translate (0, 0) $ emptyScreen
+      where
+        blockScrPic = scale 1.1 1.1 (imgs !! 5)
+        emptyScreen = scale 0 0 (imgs !! 5)
+
     -- Snake
     snakeHead :: Picture
     snakeHead = uncurry translate headPosition $ rotate headRotation snakeHeadPic
@@ -192,6 +214,22 @@ render game imgs =
       uncurry translate (440, 360) $ scale 0.2 0.2 $ color white $ text "Score: ",
       uncurry translate (440, 320) $ scale 0.2 0.2 $ color white $ text (show (playerScore game))
       ]
+
+    -- High Score
+
+    gameHighScore :: Picture
+    gameHighScore = pictures [
+      uncurry translate (440, 250) $ scale 0.2 0.2 $ color white $ text "High Score: ",
+      uncurry translate (440, 210) $ scale 0.2 0.2 $ color white $ text (show (highScore game))
+      ]
+
+    -- Level
+    gameLevel :: Picture
+    gameLevel = pictures [
+      uncurry translate (440, -230) $ scale 0.2 0.2 $ color white $ text "Level: ",
+      uncurry translate (440, -270) $ scale 0.2 0.2 $ color white $ text (show (level game))
+      ]
+
     -- Time alive
 
     timeDisplay :: Picture
@@ -234,7 +272,10 @@ snakeIncrement lastBlock = [lastBlock | t <- [1..snakeIncrementQuantity]]
     snakeIncrementQuantity = blockSize / snakeTailSpacing
 
 moveSnake :: Float -> SnakellGame -> SnakellGame
-moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
+moveSnake seconds game
+  | snakeHitsTail || newScore < 0 = initialState newHighScore
+  | gameRunning game = nextGameState 
+  | otherwise = initialState newHighScore
   where
     -- Next game state (after each frame)
 
@@ -249,6 +290,10 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
       , timeAlive = newTimeAlive
       , timePassed = newTimePassed
       , slimeLocs = newerSlimeLocs
+      , level = newLevel
+      , applesEaten = newApplesEaten
+      , gameRunning = True
+      , highScore = newHighScore
       }
 
     -- Localização e direção antiga
@@ -268,9 +313,19 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
     -- New score
 
     newScore :: Float
-    newScore = (playerScore) game + scoreIncrement
+    newScore = (playerScore) game + scoreIncrement - scoreDecrement + killedSlimes
       where
-        scoreIncrement = if snakeEatsApple then 3 else 0
+        scoreIncrement = if snakeEatsApple then 100 else 0
+        scoreDecrement
+          | slimeHitsHead = 2
+          | slimeHitsTail = 1 
+          | otherwise = 0
+        killedSlimes = int2Float $ (length (slimeLocs game) - length aliveSlimeLocs) * 10
+
+    -- New High Score
+    newHighScore :: Float 
+    newHighScore = max newScore (highScore game)
+
 
     -- New time alive
 
@@ -322,6 +377,13 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
 
     bulletHitAnySlime = any bulletHitSlime (slimeLocs game)
 
+
+
+    slimeHitsTail = not $ null $ filter (==True) [circleCollision slimeLoc blockSize tailBlockLoc blockSize | (tailBlockLoc, _) <- snakeTailLoc game, slimeLoc <- slimeLocs game]
+
+    slimeHitsHead = not $ null $ filter (==True) [circleCollision (snakeHeadLoc game) blockSize slimeLoc blockSize | slimeLoc <- slimeLocs game]
+    
+
     --
 
     teste :: SnakeBlock -> [SnakeBlock] -> [SnakeBlock]
@@ -356,6 +418,18 @@ moveSnake seconds game = if snakeHitsTail then initialState else nextGameState
         ((bulletX, bulletY), (bulletDirX, bulletDirY)) = bullet game
         bulletWallCollision = wallCollision (bulletX, bulletY) (blockRadius / 2)
 
+    fib 0 = 0
+    fib 1 = 1
+    fib n = fib (n-1) + fib (n-2)
+
+    newLevel :: Int
+    newLevel = if applesEaten game == fib (level game + 1) then (level game) + 1 else level game
+
+    newApplesEaten :: Int
+    newApplesEaten
+      | newLevel /= level game = 0
+      | otherwise = if snakeEatsApple then (applesEaten game) + 1 else applesEaten game
+
 
 -- Respond to key events.
 handleKeys :: Event -> SnakellGame -> SnakellGame
@@ -380,6 +454,9 @@ handleKeys (EventKey (SpecialKey KeyRight) _ _ _) game =
 handleKeys (EventKey (SpecialKey KeyLeft) _ _ _) game =
   game { snakeDirection = if snakeDirection game == (1, 0) then (1, 0) else (-1, 0) }
 
+handleKeys (EventKey (Char 'a') _ _ _) game = 
+  game { gameRunning = True }
+
 -- Do nothing for all other events.
 handleKeys _ game = game
 
@@ -399,5 +476,6 @@ main = do
   snakeHeadPicture <- loadBMP "src/snakeHead.bmp"
   snakeBlockPicture <- loadBMP "src/snakeBlock.bmp"
   slimePicture <- loadBMP "src/slime.bmp"
+  blockScreen <- loadBMP "src/blockScreen.bmp"
 
-  play window background fps initialState (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture, slimePicture]) handleKeys update
+  play window background fps (initialState 0.0) (`render` [grassPicture, applePicture, snakeHeadPicture, snakeBlockPicture, slimePicture, blockScreen]) handleKeys update
