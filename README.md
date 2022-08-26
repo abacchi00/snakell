@@ -1,2 +1,2 @@
 # snakell
-## inicio readme
+## Snakell is a game developed in Haskell
