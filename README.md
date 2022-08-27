@@ -8,7 +8,7 @@ Jogo desenvolvido em Haskell usando o pacote [Gloss](https://hackage.haskell.org
 
 ## Começando
 
-Para rodar o jogo, rode o comando "stack run".
+Para rodar o jogo, rode o comando "stack run" dentro do diretório do projeto.
 
 ## Comandos do Jogo
 
